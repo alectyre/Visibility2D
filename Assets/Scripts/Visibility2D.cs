@@ -10,22 +10,11 @@ namespace Visibility2D
         [SerializeField] Vector2 center;
         [SerializeField] float maxDist = 0.001f;
 
-        [Serializable]
-        class Intersection : IComparable<Intersection> {
-            public Vector2 position;
-            public Edge edge;
-            public float angle;
-            //public Intersection(Vector2 position, Edge edge) { this.position = position; this.edge = edge; }
-            public int CompareTo(Intersection otherIntersection)
-            {
-                if (otherIntersection == null) return 1;
-                return this.angle.CompareTo(otherIntersection.angle);
-            }
-        }
-
         private void Start()
         {
             //BuildMap();
+
+            //Edge.TestEdgeMerge();
         }
 
         private void Update()
@@ -44,10 +33,10 @@ namespace Visibility2D
             Point[] points = GetUniquePoints(map); //This can be done once during map generation
 
             // Update angles for points
-            UpdateAnglesForPoints(ref points, center);
+            UpdateAnglesForPoints(points, center);
 
             // Remove identical angles
-            HashSet<Point> uniqueAngles = new HashSet<Point>(new PointAngleComparer());
+            HashSet<Point> uniqueAngles = new HashSet<Point>(new PointAngleEqualityComparer());
             for (int i = 0; i < points.Length; i++)
                 uniqueAngles.Add(points[i]);
             points = new Point[uniqueAngles.Count];
@@ -59,14 +48,15 @@ namespace Visibility2D
                 Debug.DrawRay(center, new Vector2(Mathf.Cos(point.angle), Mathf.Sin(point.angle)) * maxDist, Color.cyan);
             }
 
-            List<Intersection> intersections = new List<Intersection>();
+            //NOTE should use object pooling for intersections
+            List<Point> intersections = new List<Point>();
 
             // For each point find closest intersection, if any
             for (int i = 0; i < points.Length; i++)
             {
                 Point point = points[i];
                 Vector2 rayEnd = new Vector2(Mathf.Cos(point.angle), Mathf.Sin(point.angle)) * maxDist + center;
-                Intersection closestIntersection = new Intersection();
+                Point closestIntersection = new Point();
                 closestIntersection.angle = point.angle;
 
                 //Compare ray to all edges
@@ -85,16 +75,16 @@ namespace Visibility2D
                     Vector2 intersectionPosition;
                     if (FindIntersectionLineSegments(center, rayEnd, edge.start.position, edge.end.position, out intersectionPosition))
                     {
-                        if (closestIntersection.edge == null ||
+                        if (closestIntersection.edges.Count == 0 ||
                            (intersectionPosition - center).sqrMagnitude < (closestIntersection.position - center).sqrMagnitude)
                         {
                             closestIntersection.position = intersectionPosition;
-                            closestIntersection.edge = edge;
+                            closestIntersection.edges.Add(edge);
                         }
                     }
                 }
 
-                if (closestIntersection.edge == null)
+                if (closestIntersection.edges.Count == 0)
                     closestIntersection.position = rayEnd;
 
                 intersections.Add(closestIntersection);
@@ -102,22 +92,22 @@ namespace Visibility2D
 
             for (int i = 0; i < intersections.Count; i++)
             {
-                Intersection intersection = intersections[i];
+                Point intersection = intersections[i];
                 Debug.DrawRay(center, intersection.position, Color.magenta);
-                DebugScript.DrawCross(intersection.position, 0.2f, Color.cyan);
+                DebugScript.DrawCross(intersection.position, 0.2f, Color.red);
             }
 
 
             // Sort intersects by angle
-            Intersection[] intersectionsArray = intersections.ToArray();
-            intersectionsArray.MergeSort(0, intersections.Count - 1);
+            Point[] intersectionsArray = intersections.ToArray();
+            intersectionsArray.MergeSort(0, intersections.Count - 1, new PointAnglerComparer());
 
             // Polygon verts are intersects, in order of angle
             //TODO build mesh
         }
 
         //Gets the polar angle of each point (radians, man)
-        void UpdateAnglesForPoints(ref Point[] points, Vector2 center)
+        void UpdateAnglesForPoints(Point[] points, Vector2 center)
         {
             for (int i = 0; i < points.Length; i++)
             {
@@ -162,7 +152,7 @@ namespace Visibility2D
 
         private Point[] GetUniquePoints(List<Edge> edges)
         {
-            HashSet<Point> points = new HashSet<Point>(new PointPositionComparer());
+            HashSet<Point> points = new HashSet<Point>(new PointPositionEqualityComparer());
             for (int i = 0; i < edges.Count; i++)
             {
                 Edge edge = edges[i];
@@ -200,9 +190,6 @@ namespace Visibility2D
             //Merge nonunique points
             //MergeVeryClosePoints(map, maxDist);
 
-            for (int i = 0; i < map.Count; i++)
-                Debug.DrawLine(map[i].start.position, map[i].end.position, Color.yellow);
-
             //Cull edges wholly off screen
             for (int i = 0; i < map.Count; i++)
             {
@@ -217,6 +204,10 @@ namespace Visibility2D
             }
 
             Visibility(map);
+
+            for (int i = 0; i < map.Count; i++)
+                Debug.DrawLine(map[i].start.position, map[i].end.position, Color.yellow);
+
         }
 
 
