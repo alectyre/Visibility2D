@@ -15,11 +15,13 @@ namespace Visibility2D {
 
         private void Start()
         {
-            map = BuildMapFromColliders(colliders);
+
         }
 
         private void Update()
         {
+            map = BuildMapFromColliders(colliders);
+
             if (Input.GetMouseButton(0))
                 center = Camera.main.ScreenToWorldPoint(Input.mousePosition - new Vector3(0, 0, Camera.main.transform.position.z));
 
@@ -38,22 +40,24 @@ namespace Visibility2D {
                 //BoxCollider2D
                 if (collider is BoxCollider2D boxCollider)
                 {
-                    Point downLeft = new Point(boxCollider.transform.localToWorldMatrix.MultiplyPoint3x4(
-                        new Vector2(-boxCollider.size.x, -boxCollider.size.y) * 0.5f + boxCollider.offset));
-                    Point upRight = new Point(boxCollider.transform.localToWorldMatrix.MultiplyPoint3x4(
-                        new Vector2(boxCollider.size.x, boxCollider.size.y) * 0.5f + boxCollider.offset));
-                    Point upLeft = new Point(downLeft.x, upRight.y);
-                    Point downRight = new Point(upRight.x, downLeft.y);
+                    Point downLeft = new Point(boxCollider.transform.TransformPoint(
+                                  new Vector2(-boxCollider.size.x, -boxCollider.size.y) * 0.5f + boxCollider.offset));
+                    Point upRight = new Point(boxCollider.transform.TransformPoint(
+                                  new Vector2(boxCollider.size.x, boxCollider.size.y) * 0.5f + boxCollider.offset));
+                    Point upLeft = new Point(boxCollider.transform.TransformPoint(
+                                  new Vector2(-boxCollider.size.x, boxCollider.size.y) * 0.5f + boxCollider.offset));
+                    Point downRight = new Point(boxCollider.transform.TransformPoint(
+                                  new Vector2(boxCollider.size.x, -boxCollider.size.y) * 0.5f + boxCollider.offset));
 
                     map.Add(new Edge(upLeft, upRight, boxCollider));
                     map.Add(new Edge(upRight, downRight, boxCollider));
                     map.Add(new Edge(downRight, downLeft, boxCollider));
                     map.Add(new Edge(downLeft, upLeft, boxCollider));
 
-                    //DebugScript.DrawCross(upLeft.position, 0.1f, Color.red);
-                    //DebugScript.DrawCross(upRight.position, 0.1f, Color.white);
-                    //DebugScript.DrawCross(downRight.position, 0.1f, Color.blue);
-                    //DebugScript.DrawCross(downLeft.position, 0.1f, Color.yellow);
+                    DebugScript.DrawCross(upLeft.position, 0.1f, Color.red, 100);
+                    DebugScript.DrawCross(upRight.position, 0.1f, Color.white, 100);
+                    DebugScript.DrawCross(downRight.position, 0.1f, Color.blue, 100);
+                    DebugScript.DrawCross(downLeft.position, 0.1f, Color.yellow, 100);
                 }
                 //EdgeCollider2D
                 else if (collider is EdgeCollider2D edgeCollider)
@@ -125,7 +129,6 @@ namespace Visibility2D {
 
             map = new List<Edge>(map);
 
-
             //Find corners of screen
             Point lowerLeft = new Point(Camera.main.ViewportToWorldPoint(new Vector3(0, 0, 0)));
             Point upperRight = new Point(Camera.main.ViewportToWorldPoint(new Vector3(1, 1, 0)));
@@ -136,9 +139,6 @@ namespace Visibility2D {
             map.Add(new Edge(upperRight, lowerRight));
             map.Add(new Edge(lowerRight, lowerLeft));
             map.Add(new Edge(lowerLeft, upperLeft));
-
-            //Merge nonunique points
-            //MergeVeryClosePoints(map, maxDist);
 
             //Cull edges wholly off screen
             for (int i = 0; i < map.Count; i++)
