@@ -2,35 +2,169 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-namespace Visibility2D 
-{
+namespace Visibility2D {
     public class Visibility2D : MonoBehaviour {
 
-        [SerializeField] Edge[] _edges;
         [SerializeField] Vector2 center;
         [SerializeField] float maxDist = 0.001f;
+        [SerializeField] bool debugVisibility;
+        [SerializeField] bool debugEdgeCount;
+        [SerializeField] Collider2D[] colliders;
+
+        List<Edge> map;
 
         private void Start()
         {
-            //BuildMap();
-
-            //Edge.TestEdgeMerge();
+            map = BuildMapFromColliders(colliders);
         }
 
         private void Update()
         {
-            //Visibility();
+            if (Input.GetMouseButton(0))
+                center = Camera.main.ScreenToWorldPoint(Input.mousePosition - new Vector3(0, 0, Camera.main.transform.position.z));
+
+            if (debugVisibility)
+                DebugScript.DrawCross(center, 0.2f, Color.green);
+
+            Visibility(center, map);
         }
 
-        void BuildMap()
+        List<Edge> BuildMapFromColliders(Collider2D[] colliders)
         {
-            //Generate edges for colliders
+            List<Edge> map = new List<Edge>();
+
+            foreach (Collider2D collider in colliders)
+            {
+                //BoxCollider2D
+                if (collider is BoxCollider2D boxCollider)
+                {
+                    Point downLeft = new Point(boxCollider.transform.localToWorldMatrix.MultiplyPoint3x4(
+                        new Vector2(-boxCollider.size.x, -boxCollider.size.y) * 0.5f + boxCollider.offset));
+                    Point upRight = new Point(boxCollider.transform.localToWorldMatrix.MultiplyPoint3x4(
+                        new Vector2(boxCollider.size.x, boxCollider.size.y) * 0.5f + boxCollider.offset));
+                    Point upLeft = new Point(downLeft.x, upRight.y);
+                    Point downRight = new Point(upRight.x, downLeft.y);
+
+                    map.Add(new Edge(upLeft, upRight, boxCollider));
+                    map.Add(new Edge(upRight, downRight, boxCollider));
+                    map.Add(new Edge(downRight, downLeft, boxCollider));
+                    map.Add(new Edge(downLeft, upLeft, boxCollider));
+
+                    //DebugScript.DrawCross(upLeft.position, 0.1f, Color.red);
+                    //DebugScript.DrawCross(upRight.position, 0.1f, Color.white);
+                    //DebugScript.DrawCross(downRight.position, 0.1f, Color.blue);
+                    //DebugScript.DrawCross(downLeft.position, 0.1f, Color.yellow);
+                }
+                //EdgeCollider2D
+                else if (collider is EdgeCollider2D edgeCollider)
+                {
+                    Vector2[] points = edgeCollider.points;
+
+                    for (int i = 0; i < points.Length; i++)
+                        points[i] = edgeCollider.transform.localToWorldMatrix.MultiplyPoint3x4(points[i]);
+
+                    for (int i = 1; i < points.Length; i++)
+                        map.Add(new Edge(points[i - 1], points[i], edgeCollider));
+
+                    //Color[] colors = { Color.red, Color.white, Color.blue, Color.yellow };
+                    //for (int i = 0; i < points.Length; i++)
+                    //DebugScript.DrawCross(points[i], 0.1f, colors[(int)Mathf.Repeat(i, colors.Length)]);
+                }
+                //PolygonCollider2D
+                else if (collider is PolygonCollider2D polygonCollider)
+                {
+                    Vector2[] points = polygonCollider.points;
+
+                    for (int i = 0; i < points.Length; i++)
+                        points[i] = polygonCollider.transform.localToWorldMatrix.MultiplyPoint3x4(points[i]);
+
+                    for (int i = 1; i < points.Length; i++)
+                        map.Add(new Edge(points[i - 1], points[i], polygonCollider));
+
+                    map.Add(new Edge(points[points.Length - 1], points[0], polygonCollider));
+
+                    //Color[] colors = { Color.red, Color.white, Color.blue, Color.yellow };
+                    //for (int i = 0; i < points.Length; i++)
+                    //DebugScript.DrawCross(points[i], 0.1f, colors[(int)Mathf.Repeat(i, colors.Length)]);
+                }
+                //Unsupported type
+                else
+                {
+                    Debug.LogError("Unsupported Collider2D type found during Visibility2D map generation");
+                }
+            }
+
+            return map;
         }
 
-        void Visibility(List<Edge> map)
+        void Visibility(Vector2 center, List<Edge> map)
         {
-            // Get points
-            Point[] points = GetUniquePoints(map); //This can be done once during map generation
+            /*
+             * Algorithm Explanation:
+             * 
+             * Inputs: A map of all vision blocking edges (as line segments)
+             * 
+             * 1) Create a list of all unique angles from point of vision to each point on map
+             * 2) Starting from an arbitrary angle, iterate through each angle the list as a 
+             *    ray to check for intersections with edges on map, storing the closest intersection
+             *    for each angle
+             * 3) Sort intersections by angle calculated in step 1
+             * 4) The visibility polygon is constructd by iterating over intersections
+             * 5) Build mesh by stitching each set of adjacent intersections
+             *    and the origin into a triangle
+             * 
+             * Sources: 
+             * https://www.redblobgames.com/articles/visibility/
+             * https://github.com/ncase/sight-and-light/blob/gh-pages/draft8.html
+             * 
+             *  Note: Adding the edges of screen to the map is necessary so the extents of the screen 
+             *        are inlucded in the visibility polygon
+             */
+
+            // 1) Create a list of all unique angles from point of vision to each point on map
+
+            map = new List<Edge>(map);
+
+
+            //Find corners of screen
+            Point lowerLeft = new Point(Camera.main.ViewportToWorldPoint(new Vector3(0, 0, 0)));
+            Point upperRight = new Point(Camera.main.ViewportToWorldPoint(new Vector3(1, 1, 0)));
+            Point upperLeft = new Point(new Vector2(lowerLeft.x, upperRight.y));
+            Point lowerRight = new Point(new Vector2(upperRight.x, lowerLeft.y));
+
+            map.Add(new Edge(upperLeft, upperRight));
+            map.Add(new Edge(upperRight, lowerRight));
+            map.Add(new Edge(lowerRight, lowerLeft));
+            map.Add(new Edge(lowerLeft, upperLeft));
+
+            //Merge nonunique points
+            //MergeVeryClosePoints(map, maxDist);
+
+            //Cull edges wholly off screen
+            for (int i = 0; i < map.Count; i++)
+            {
+                Edge edge = map[i];
+                if ((edge.start.x < upperLeft.x && edge.end.x < upperLeft.x) ||  //Too far left
+                    (edge.start.x > lowerRight.x && edge.end.x > lowerRight.x) || //Too far right
+                    (edge.start.y > upperLeft.y && edge.end.y > upperLeft.y) || //Too far up
+                    (edge.start.y < lowerRight.y && edge.end.y < lowerRight.y))   //Too far down
+                {
+                    map.RemoveAt(i--);
+                }
+            }
+
+            Edge.MergePoints(map, 0.01f);
+
+            //Get all points in map
+            Point[] points = GetPointsInMaps(map);
+
+            if (debugVisibility)
+                for (int i = 0; i < map.Count; i++)
+                    Debug.DrawLine(map[i].start.position, map[i].end.position, Color.yellow);
+
+            //Debug points
+            if (debugEdgeCount)
+                Point.DebugPointCount(new List<Point>(points));
 
             // Update angles for points
             UpdateAnglesForPoints(points, center);
@@ -45,30 +179,62 @@ namespace Visibility2D
             for (int i = 0; i < points.Length; i++)
             {
                 Point point = points[i];
-                Debug.DrawRay(center, new Vector2(Mathf.Cos(point.angle), Mathf.Sin(point.angle)) * maxDist, Color.cyan);
+                if (debugVisibility)
+                    Debug.DrawRay(center, new Vector2(Mathf.Cos(point.angle), Mathf.Sin(point.angle)) * maxDist, Color.cyan);
             }
 
-            //NOTE should use object pooling for intersections
+            // 2) Starting from an arbitrary angle, iterate through each angle in the list as a 
+            //    ray to check for intersections with edges on map, storing the closest intersection
+            //    for each angle
+
+            //TODO should use object pooling for intersections or make an intersection struct
             List<Point> intersections = new List<Point>();
 
             // For each point find closest intersection, if any
             for (int i = 0; i < points.Length; i++)
             {
                 Point point = points[i];
+
                 Vector2 rayEnd = new Vector2(Mathf.Cos(point.angle), Mathf.Sin(point.angle)) * maxDist + center;
                 Point closestIntersection = new Point();
                 closestIntersection.angle = point.angle;
+
+                bool edgeOnLeft = false;
+                bool edgeOnRight = false;
+                float epsilon = 0.0001f;
+
+                if (point.edges.Count > 1)
+                {
+                    foreach (Edge edge in point.edges)
+                    {
+                        float sideOfLine = PointSideOfLine(edge.start.position, rayEnd, center);
+
+                        if (sideOfLine < -epsilon)
+                            edgeOnRight = true;
+                        if (sideOfLine > epsilon)
+                            edgeOnLeft = true;
+
+                        sideOfLine = PointSideOfLine(edge.end.position, rayEnd, center);
+
+                        if (sideOfLine < -epsilon)
+                            edgeOnRight = true;
+                        if (sideOfLine > epsilon)
+                            edgeOnLeft = true;
+                    }
+                }
+
+                bool ignoreAdjacent = !(edgeOnLeft && edgeOnRight);
 
                 //Compare ray to all edges
                 for (int u = 0; u < map.Count; u++)
                 {
                     Edge edge = map[u];
+
                     //Handle corners by ignoring edges who's start or end points are at the intersection (ie, probably the target for this ray)
                     //but only if there isn't another edge sharing the point and on the other side of the ray. This skims corners but doesn't
                     //penetrate if two segments are connected
-                    if (edge.start == point || edge.end == point)
+                    if (ignoreAdjacent && (edge.start == point || edge.end == point))
                     {
-                        //TODO Only skip if both edges are on the same side (ie we're skimming a corner)
                         continue;
                     }
 
@@ -88,22 +254,30 @@ namespace Visibility2D
                     closestIntersection.position = rayEnd;
 
                 intersections.Add(closestIntersection);
+
+                if (ignoreAdjacent && (point.position - center).sqrMagnitude < (closestIntersection.position - center).sqrMagnitude)
+                    intersections.Insert(intersections.Count - 1, point);
             }
 
+            //Debug intersections
             for (int i = 0; i < intersections.Count; i++)
             {
                 Point intersection = intersections[i];
-                Debug.DrawRay(center, intersection.position, Color.magenta);
-                DebugScript.DrawCross(intersection.position, 0.2f, Color.red);
+                if (debugVisibility)
+                    Debug.DrawLine(center, intersection.position, Color.magenta);
+                if (debugVisibility)
+                    DebugScript.DrawCross(intersection.position, 0.2f, Color.red);
             }
 
-
-            // Sort intersects by angle
+            // 3) Sort intersects by angle
             Point[] intersectionsArray = intersections.ToArray();
             intersectionsArray.MergeSort(0, intersections.Count - 1, new PointAnglerComparer());
 
-            // Polygon verts are intersects, in order of angle
-            //TODO build mesh
+            // 4) The visibility polygon is constructd by stitching each two intersection points
+            //    together with the origin to create triangles
+
+            // 5) Build mesh by stitching each set of adjacent intersections 
+            //    and the origin into a triangle
         }
 
         //Gets the polar angle of each point (radians, man)
@@ -118,8 +292,6 @@ namespace Visibility2D
                     point.angle += 2 * Mathf.PI;
             }
         }
-
-
 
         /// <summary>
         /// Finds the intersection point between two line segments. Returns false if there is no intersection point.
@@ -150,67 +322,23 @@ namespace Visibility2D
             }
         }
 
-        private Point[] GetUniquePoints(List<Edge> edges)
+        private Point[] GetPointsInMaps(params List<Edge>[] maps)
         {
             HashSet<Point> points = new HashSet<Point>(new PointPositionEqualityComparer());
-            for (int i = 0; i < edges.Count; i++)
+            foreach (List<Edge> map in maps)
             {
-                Edge edge = edges[i];
-                points.Add(edge.start);
-                points.Add(edge.end);
+                for (int i = 0; i < map.Count; i++)
+                {
+                    Edge edge = map[i];
+                    points.Add(edge.start);
+                    points.Add(edge.end);
+                }
             }
 
             Point[] results = new Point[points.Count];
             points.CopyTo(results);
-
             return results;
         }
-
-        private void OnDrawGizmosSelected()
-        {
-            DebugScript.DrawCross(center, 0.2f, Color.green);
-
-            //Do once at scene start
-            //Create map
-            List<Edge> map = new List<Edge>(_edges);
-
-            //Do once per frame
-            //Find corners of screen
-            Point upperLeft = new Point(Camera.main.ViewportToWorldPoint(new Vector3(0, 1, 0)));
-            Point lowerRight = new Point(Camera.main.ViewportToWorldPoint(new Vector3(1, 0, 0)));
-            Point upperRight = new Point(new Vector2(lowerRight.x, upperLeft.y));
-            Point lowerLeft = new Point(new Vector2(upperLeft.x, lowerRight.y));
-
-            //Ad edges of screen
-            map.Add(new Edge(upperLeft, upperRight));
-            map.Add(new Edge(upperRight, lowerRight));
-            map.Add(new Edge(lowerRight, lowerLeft));
-            map.Add(new Edge(lowerLeft, upperLeft));
-
-            //Merge nonunique points
-            //MergeVeryClosePoints(map, maxDist);
-
-            //Cull edges wholly off screen
-            for (int i = 0; i < map.Count; i++)
-            {
-                Edge edge = map[i];
-                if ((edge.start.x < upperLeft.x && edge.end.x < upperLeft.x) ||  //Too far left
-                    (edge.start.x > lowerRight.x && edge.end.x > lowerRight.x) || //Too far right
-                    (edge.start.y > upperLeft.y && edge.end.y > upperLeft.y) || //Too far up
-                    (edge.start.y < lowerRight.y && edge.end.y < lowerRight.y))   //Too far down
-                {
-                    map.RemoveAt(i--);
-                }
-            }
-
-            Visibility(map);
-
-            for (int i = 0; i < map.Count; i++)
-                Debug.DrawLine(map[i].start.position, map[i].end.position, Color.yellow);
-
-        }
-
-
 
         //Returns 0 if point is on on the line, and +1 on the left side, -1 on the right side.
         public static float PointSideOfLine(Vector2 point, Vector2 end, Vector2 start)

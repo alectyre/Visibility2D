@@ -23,6 +23,9 @@ namespace Visibility2D
 
         public Edge(Point start, Point end) : this(start, end, null) { }
 
+        public Edge(Vector2 start, Vector2 end, Collider2D collider) : this(new Point(start), new Point(end), collider) { }
+
+        public Edge(Vector2 start, Vector2 end) : this(start, end, null) { }
 
 
         //NOTE   Simple one at a time merging will behave a bit unintuitively as each merge
@@ -36,19 +39,18 @@ namespace Visibility2D
         //       3 check each point added to merge list for too close points not already in merge list and add to merge list
         //       4 if any points are added to merge list, go back to step 3
         //       5 if no points are added, merge all points in merge list to their average position
-        public static void MergeVeryClosePoints(List<Edge> edges, float minDist)
+        public static void MergePoints(List<Edge> edges, float minDist)
         {
             //Debug.Log("MergeVeryClosePoints START");
 
-            //Check for invalid edges
+            //Remove edges who's length is less than minDist
+            float minDistSqrd = minDist * minDist;
             for (int i = 0; i < edges.Count; i++)
             {
                 Edge edge = edges[i];
-                if (edge.start == edge.end || (edge.end.position - edge.start.position).sqrMagnitude < minDist)
+                if (edge.start == edge.end || (edge.end.position - edge.start.position).sqrMagnitude < minDistSqrd)
                 {
                     //Debug.Log("Removing invalid edge at " + i);
-                    //The edge's start and end are too close or are the same point,
-                    //so we remove it entirely
                     edges.RemoveAt(i--);
                 }
             }
@@ -69,7 +71,7 @@ namespace Visibility2D
                 {
                     bool startWasMerged = false;
                     //Check for unmerged points that are very close together and merge them
-                    if (edge.start != other.start &&
+                    if (edge.start != other.start && !other.start.edges.Contains(edge) &&
                         (edge.start.position - other.start.position).sqrMagnitude < minDist)
                     {
                         //Debug.Log("Merging edge " + edgeIndex + " start with other " + otherIndex + " start");
@@ -78,8 +80,8 @@ namespace Visibility2D
                         edge.start.edges.Add(edge);
                         startWasMerged = true;
                     }
-                    else if (edge.start != other.end &&
-                        (edge.start.position - other.end.position).sqrMagnitude < minDist)
+                    else if (edge.start != other.end && !other.end.edges.Contains(edge) &&
+                    (edge.start.position - other.end.position).sqrMagnitude < minDist)
                     {
                         //Debug.Log("Merging edge " + edgeIndex + " start with other " + otherIndex + " end");
                         edge.start.edges.Remove(edge);
@@ -101,7 +103,7 @@ namespace Visibility2D
                 {
                     bool endWasMerged = false;
                     //Check for unmerged points that are very close together and merge them
-                    if (edge.end != other.start &&
+                    if (edge.end != other.start && !other.start.edges.Contains(edge) &&
                         (edge.end.position - other.start.position).sqrMagnitude < minDist)
                     {
                         //Debug.Log("Merging edge " + edgeIndex + " end with other " + otherIndex + " start");
@@ -110,7 +112,7 @@ namespace Visibility2D
                         edge.end.edges.Add(edge);
                         endWasMerged = true;
                     }
-                    else if (edge.end != other.end &&
+                    else if (edge.end != other.end && !other.end.edges.Contains(edge) &&
                         (edge.end.position - other.end.position).sqrMagnitude < minDist)
                     {
                         //Debug.Log("Merging edge " + edgeIndex + " end with other " + otherIndex + " end");
@@ -135,54 +137,5 @@ namespace Visibility2D
 
             //Debug.Log("MergeVeryClosePoints END");
         }
-
-        #region Testing
-
-        public static void TestEdgeMerge()
-        {
-            List<Edge> testMap = new List<Edge>();
-
-            testMap.Add(new Edge(new Point(-1, 1), new Point(1, 1)));
-            testMap.Add(new Edge(new Point(-1, 1), new Point(-1, 1)));
-            testMap.Add(new Edge(new Point(1, 1), new Point(-1, -1)));
-            testMap.Add(new Edge(new Point(-1, 1), new Point(-1, -1)));
-            testMap.Add(new Edge(new Point(2, 2), new Point(-1, 1)));
-
-            MergeVeryClosePoints(testMap, 1f);
-
-            HashSet<Point> points = new HashSet<Point>();
-
-            foreach (Edge edge in testMap)
-            {
-                Debug.DrawLine(edge.start.position, edge.end.position, Color.gray, 1000);
-                points.Add(edge.start);
-                points.Add(edge.end);
-            }
-
-            foreach (Point point in points)
-            {
-                Debug.Log("Drawing point");
-                switch (point.edges.Count)
-                {
-                    case 0:
-                        DebugScript.DrawCross(point.position, 0.1f, Color.gray, 1000);
-                        break;
-                    case 1:
-                        DebugScript.DrawCross(point.position, 0.2f, Color.green, 1000);
-                        break;
-                    case 2:
-                        DebugScript.DrawCross(point.position, 0.2f, Color.yellow, 1000);
-                        break;
-                    case 3:
-                        DebugScript.DrawCross(point.position, 0.2f, Color.red, 1000);
-                        break;
-                    default:
-                        DebugScript.DrawCross(point.position, 0.2f, Color.magenta, 1000);
-                        break;
-                }
-            }
-        }
-
-#endregion
     }
 }
